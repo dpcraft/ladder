@@ -20,7 +20,8 @@ starter_learning_rate = 0.02
 decay_after = 15
 
 batch_size = 100
-num_iter = (num_examples/batch_size) * num_epochs  # number of loop iterations
+# number of loop iterations
+num_iter = (num_examples/batch_size) * num_epochs
 
 inputs = tf.placeholder(tf.float32, shape=(None, layer_sizes[0]))
 outputs = tf.placeholder(tf.float32)
@@ -42,22 +43,28 @@ weights = {'W': [wi(s, "W") for s in shapes],  # Encoder weights
            # batch normalization parameter to scale the normalized value
            'gamma': [bi(1.0, layer_sizes[l+1], "beta") for l in range(L)]}
 
-noise_std = 0.3  # scaling factor for noise used in corrupted encoder
+# scaling factor for noise used in corrupted encoder
+noise_std = 0.3
 
 # hyperparameters that denote the importance of each layer
 denoising_cost = [1000.0, 10.0, 0.10, 0.10, 0.10, 0.10, 0.10]
-
+# join函数把l和u在第一个维度上连接起来
 join = lambda l, u: tf.concat([l, u], 0)
+# labeled 函数把 x 进行切片,切片起始位置为[0,0],size为[batch_size, -1]
 labeled = lambda x: tf.slice(x, [0, 0], [batch_size, -1]) if x is not None else x
 unlabeled = lambda x: tf.slice(x, [batch_size, 0], [-1, -1]) if x is not None else x
+# split_lu 函数，切分标签和无标签数据
 split_lu = lambda x: (labeled(x), unlabeled(x))
 
 training = tf.placeholder(tf.bool)
 
-ewma = tf.train.ExponentialMovingAverage(decay=0.99)  # to calculate the moving averages of mean and variance
-bn_assigns = []  # this list stores the updates to be made to average mean and variance
+# 计算均值和方差的滑动平均值，decay为衰减率，用于控制模型的更新速度
+ewma = tf.train.ExponentialMovingAverage(decay=0.99)
+# this list stores the updates to be made to average mean and variance
+# 此列表存储要对平均均值和方差进行的更新
+bn_assigns = []
 
-
+# 归一化
 def batch_normalization(batch, mean=None, var=None):
     if mean is None or var is None:
         mean, var = tf.nn.moments(batch, axes=[0])
@@ -77,11 +84,12 @@ def update_batch_normalization(batch, l):
     with tf.control_dependencies([assign_mean, assign_var]):
         return (batch - mean) / tf.sqrt(var + 1e-10)
 
-
+# 编码
 def encoder(inputs, noise_std):
     h = inputs + tf.random_normal(tf.shape(inputs)) * noise_std  # add noise to input
     d = {}  # to store the pre-activation, activation, mean and variance for each layer
     # The data for labeled and unlabeled examples are stored separately
+    # z:隐藏变量?, m:mean?, v:variance?, h:输出?
     d['labeled'] = {'z': {}, 'm': {}, 'v': {}, 'h': {}}
     d['unlabeled'] = {'z': {}, 'm': {}, 'v': {}, 'h': {}}
     d['labeled']['z'][0], d['unlabeled']['z'][0] = split_lu(h)
@@ -93,24 +101,23 @@ def encoder(inputs, noise_std):
 
         m, v = tf.nn.moments(z_pre_u, axes=[0])
 
-        # if training:
+        # if training: 
         def training_batch_norm():
-            # Training batch normalization
-            # batch normalization for labeled and unlabeled examples is performed separately
+            # 训练时的批归一化，有标签和无标签分开进行批归一化
             if noise_std > 0:
-                # Corrupted encoder
-                # batch normalization + noise
+                # 加噪声的编码
+                # 批归一化后 加噪声 noise
                 z = join(batch_normalization(z_pre_l), batch_normalization(z_pre_u, m, v))
                 z += tf.random_normal(tf.shape(z_pre)) * noise_std
             else:
-                # Clean encoder
+                # 未加噪声的编码
                 # batch normalization + update the average mean and variance using batch mean and variance of labeled examples
                 z = join(update_batch_normalization(z_pre_l, l), batch_normalization(z_pre_u, m, v))
             return z
 
-        # else:
+        # else: 
         def eval_batch_norm():
-            # Evaluation batch normalization
+            # 评估时用的批归一化函数
             # obtain average mean and variance and use it to normalize the batch
             mean = ewma.average(running_mean[l-1])
             var = ewma.average(running_var[l-1])
@@ -122,13 +129,15 @@ def encoder(inputs, noise_std):
             return z
 
         # perform batch normalization according to value of boolean "training" placeholder:
+        # 这是一个根据条件进行流程控制的函数，它有三个参数，pred, true_fn,false_fn ,
+        # 它的主要作用是在 pred 为真的时候返回 true_fn 函数的结果，为假的时候返回 false_fn 
         z = tf.cond(training, training_batch_norm, eval_batch_norm)
 
         if l == L:
-            # use softmax activation in output layer
+            # 输出层使用softmax激活函数
             h = tf.nn.softmax(weights['gamma'][l-1] * (z + weights["beta"][l-1]))
         else:
-            # use ReLU activation in hidden layers
+            # 隐藏层使用ReLu激活函数
             h = tf.nn.relu(z + weights["beta"][l-1])
         d['labeled']['z'][l], d['unlabeled']['z'][l] = split_lu(z)
         d['unlabeled']['m'][l], d['unlabeled']['v'][l] = m, v  # save mean and variance of unlabeled examples for decoding
@@ -143,7 +152,7 @@ y, clean = encoder(inputs, 0.0)  # 0.0 -> do not add noise
 
 print "=== Decoder ==="
 
-
+# 高斯去噪函数
 def g_gauss(z_c, u, size):
     "gaussian denoising function proposed in the original paper"
     wi = lambda inits, name: tf.Variable(inits * tf.ones([size]), name=name)
@@ -165,9 +174,10 @@ def g_gauss(z_c, u, size):
     z_est = (z_c - mu) * v + mu
     return z_est
 
-# Decoder
+# 解码
 z_est = {}
-d_cost = []  # to store the denoising cost of all layers
+# 保存各层的去噪代价
+d_cost = []  
 for l in range(L, -1, -1):
     print "Layer ", l, ": ", layer_sizes[l+1] if l+1 < len(layer_sizes) else None, " -> ", layer_sizes[l], ", denoising cost: ", denoising_cost[l]
     z, z_c = clean['unlabeled']['z'][l], corr['unlabeled']['z'][l]
@@ -179,48 +189,51 @@ for l in range(L, -1, -1):
     u = batch_normalization(u)
     z_est[l] = g_gauss(z_c, u, layer_sizes[l])
     z_est_bn = (z_est[l] - m) / v
-    # append the cost of this layer to d_cost
+    # 把该层的代价添加到d_cost
     d_cost.append((tf.reduce_mean(tf.reduce_sum(tf.square(z_est_bn - z), 1)) / layer_sizes[l]) * denoising_cost[l])
 
-# calculate total unsupervised cost by adding the denoising cost of all layers
+# 把各层的去噪代价加起来，计算无监督的总的代价
 u_cost = tf.add_n(d_cost)
 
 y_N = labeled(y_c)
-cost = -tf.reduce_mean(tf.reduce_sum(outputs*tf.log(y_N), 1))  # supervised cost
-loss = cost + u_cost  # total cost
+# 监督学习的代价函数
+cost = -tf.reduce_mean(tf.reduce_sum(outputs*tf.log(y_N), 1)) 
+# 总代价函数
+loss = cost + u_cost
+# 评估的代价函数
+pred_cost = -tf.reduce_mean(tf.reduce_sum(outputs*tf.log(y), 1))
 
-pred_cost = -tf.reduce_mean(tf.reduce_sum(outputs*tf.log(y), 1))  # cost used for prediction
-
-correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(outputs, 1))  # no of correct predictions
+# 预测正确的样本，返回bool型列表
+correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(outputs, 1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float")) * tf.constant(100.0)
 
 learning_rate = tf.Variable(starter_learning_rate, trainable=False)
 train_step = tf.train.AdamOptimizer(learning_rate).minimize(loss)
 
-# add the updates of batch normalization statistics to train_step
+# 将批归一化的更新信息添加到train_step
 bn_updates = tf.group(*bn_assigns)
 with tf.control_dependencies([train_step]):
     train_step = tf.group(bn_updates)
 
 print "===  Loading Data ==="
 mnist = input_data.read_data_sets("MNIST_data", n_labeled=num_labeled, one_hot=True)
-
+# 用来保存模型
 saver = tf.train.Saver()
 
 print "===  Starting Session ==="
 sess = tf.Session()
-
+# 开始训练的数据位置
 i_iter = 0
-
-ckpt = tf.train.get_checkpoint_state('checkpoints/')  # get latest checkpoint (if any)
+# 获取最新的一个checkpoint，（如果存在的话）
+ckpt = tf.train.get_checkpoint_state('checkpoints/')
 if ckpt and ckpt.model_checkpoint_path:
-    # if checkpoint exists, restore the parameters and set epoch_n and i_iter
+    # 如果checkpoint 存在, 从中恢复参数，并且设置epoch_n 和 i_iter 的值
     saver.restore(sess, ckpt.model_checkpoint_path)
     epoch_n = int(ckpt.model_checkpoint_path.split('-')[1])
     i_iter = (epoch_n+1) * (num_examples/batch_size)
     print "Restored Epoch ", epoch_n
 else:
-    # no checkpoint exists. create checkpoints directory if it does not exist.
+    # 如果不存在checkpoint， 如果 checkpoints 目录不存在，则创建该目录。
     if not os.path.exists('checkpoints'):
         os.makedirs('checkpoints')
     init = tf.global_variables_initializer()
@@ -228,22 +241,23 @@ else:
 
 print "=== Training ==="
 print "Initial Accuracy: ", sess.run(accuracy, feed_dict={inputs: mnist.test.images, outputs: mnist.test.labels, training: False}), "%"
-
+# tqdm 进度条
+# i 是从i_iter 到 num_iter = (num_examples/batch_size) * num_epochs，每num_examples/batch_size为一代
 for i in tqdm(range(i_iter, num_iter)):
     images, labels = mnist.train.next_batch(batch_size)
     sess.run(train_step, feed_dict={inputs: images, outputs: labels, training: True})
     if (i > 1) and ((i+1) % (num_iter/num_epochs) == 0):
         epoch_n = i/(num_examples/batch_size)
         if (epoch_n+1) >= decay_after:
-            # decay learning rate
+            # 衰减学习率
             # learning_rate = starter_learning_rate * ((num_epochs - epoch_n) / (num_epochs - decay_after))
-            ratio = 1.0 * (num_epochs - (epoch_n+1))  # epoch_n + 1 because learning rate is set for next epoch
+            ratio = 1.0 * (num_epochs - (epoch_n+1))  # epoch_n + 1 因为这个学习率是为下一次循环设置的
             ratio = max(0, ratio / (num_epochs - decay_after))
             sess.run(learning_rate.assign(starter_learning_rate * ratio))
         saver.save(sess, 'checkpoints/model.ckpt', epoch_n)
         # print "Epoch ", epoch_n, ", Accuracy: ", sess.run(accuracy, feed_dict={inputs: mnist.test.images, outputs:mnist.test.labels, training: False}), "%"
         with open('train_log', 'ab') as train_log:
-            # write test accuracy to file "train_log"
+            # 将测试准确率写入 "train_log"文件
             train_log_w = csv.writer(train_log)
             log_i = [epoch_n] + sess.run([accuracy], feed_dict={inputs: mnist.test.images, outputs: mnist.test.labels, training: False})
             train_log_w.writerow(log_i)
