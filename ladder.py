@@ -5,17 +5,19 @@ import os
 import csv
 from tqdm import tqdm
 
-layer_sizes = [784, 1000, 500, 250, 250, 250, 10]
-
-L = len(layer_sizes) - 1  # number of layers
-
+#每层的神经元个数
+layer_sizes = [784, 1000, 500, 250, 250, 250, 10] 
+# 层数
+L = len(layer_sizes) - 1 
 num_examples = 60000
+#代数
 num_epochs = 150
 num_labeled = 100
 
 starter_learning_rate = 0.02
 
-decay_after = 15  # epoch after which to begin learning rate decay
+# epoch after which to begin learning rate decay
+decay_after = 15
 
 batch_size = 100
 num_iter = (num_examples/batch_size) * num_epochs  # number of loop iterations
@@ -30,8 +32,8 @@ def bi(inits, size, name):
 
 def wi(shape, name):
     return tf.Variable(tf.random_normal(shape, name=name)) / math.sqrt(shape[0])
-
-shapes = zip(layer_sizes[:-1], layer_sizes[1:])  # shapes of linear layers
+# shapes of linear layers，将layer_sizes相邻元素依次两两连接，生成元组，在本例（[784, 1000, 500, 250, 250, 250, 10] ）中生成[(784,1000),(1000,500),(250,250)...(250,10)]
+shapes = zip(layer_sizes[:-1], layer_sizes[1:])
 
 weights = {'W': [wi(s, "W") for s in shapes],  # Encoder weights
            'V': [wi(s[::-1], "V") for s in shapes],  # Decoder weights
