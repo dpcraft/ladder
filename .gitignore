@@ -119,3 +119,5 @@ dmypy.json
 /MNIST_data
 .idea/
 **/.DS_Store
+test.py
+train_log.csv
