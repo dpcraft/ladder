@@ -11,7 +11,7 @@ layer_sizes = [784, 1000, 500, 250, 250, 250, 10]
 L = len(layer_sizes) - 1 
 num_examples = 60000
 # 代数
-num_epochs = 43
+num_epochs = 40
 num_labeled = 60000
 
 starter_learning_rate = 0.02
@@ -33,7 +33,7 @@ def bi(inits, size, name):
 
 
 def wi(shape, name):
-    return tf.Variable(tf.random_normal(shape, name=name)) // math.sqrt(shape[0])
+    return tf.Variable(tf.random_normal(shape, name=name)) / math.sqrt(shape[0])
 # shapes of linear layers，将layer_sizes相邻元素依次两两连接，生成元组，在本例（[784, 1000, 500, 250, 250, 250, 10] ）中生成[(784,1000),(1000,500),(250,250)...(250,10)]
 shapes = list(zip(layer_sizes[:-1], layer_sizes[1:]))
 
@@ -77,7 +77,7 @@ bn_assigns = []
 def batch_normalization(batch, mean=None, var=None):
     if mean is None or var is None:
         mean, var = tf.nn.moments(batch, axes=[0])
-    return (batch - mean) // tf.sqrt(var + tf.constant(1e-10))
+    return (batch - mean) / tf.sqrt(var + tf.constant(1e-10))
 
 
 # average mean and variance of all layers
@@ -92,7 +92,7 @@ def update_batch_normalization(batch, l):
     assign_var = running_var[l-1].assign(var)
     bn_assigns.append(ewma.apply([running_mean[l-1], running_var[l-1]]))
     with tf.control_dependencies([assign_mean, assign_var]):
-        return (batch - mean) // tf.sqrt(var + 1e-10)
+        return (batch - mean) / tf.sqrt(var + 1e-10)
 
 # 编码
 def encoder(inputs, noise_std):
@@ -147,7 +147,7 @@ def encoder(inputs, noise_std):
             # 输出层使用softmax激活函数
             h = tf.nn.softmax(weights['gamma'][l-1] * (z + weights["beta"][l-1]))
         else:
-            # 隐藏层使用ReLu激活函数
+            # 隐藏层使用ReLu激活函数,为什么没有gamma？
             h = tf.nn.relu(z + weights["beta"][l-1])
         d['labeled']['z'][l], d['unlabeled']['z'][l] = split_lu(z)
         d['unlabeled']['m'][l], d['unlabeled']['v'][l] = m, v  # save mean and variance of unlabeled examples for decoding
@@ -198,9 +198,9 @@ for l in range(L, -1, -1):
         u = tf.matmul(z_est[l+1], weights['V'][l])
     u = batch_normalization(u)
     z_est[l] = g_gauss(z_c, u, layer_sizes[l])
-    z_est_bn = (z_est[l] - m) // tf.sqrt(v + 1-1e-10)
+    z_est_bn = (z_est[l] - m) / tf.sqrt(v + 1-1e-10)
     # 把该层的代价添加到d_cost，reduce_sum(t,1)按行求和
-    d_cost.append((tf.reduce_mean(tf.reduce_sum(tf.square(z_est_bn - z), 1)) // layer_sizes[l]) * denoising_cost[l])
+    d_cost.append((tf.reduce_mean(tf.reduce_sum(tf.square(z_est_bn - z), 1)) / layer_sizes[l]) * denoising_cost[l])
 
 # 把各层的去噪代价加起来，计算无监督的总的代价
 u_cost = tf.add_n(d_cost)
@@ -265,7 +265,7 @@ for i in tqdm(range(i_iter, num_iter)):
             # 衰减学习率
             # learning_rate = starter_learning_rate * ((num_epochs - epoch_n) / (num_epochs - decay_after))
             ratio = 1.0 * (num_epochs - (epoch_n + 1))  # epoch_n + 1 因为这个学习率是为下一次循环设置的
-            ratio = max(0, ratio // (num_epochs - decay_after))
+            ratio = max(0, ratio / (num_epochs - decay_after))
             sess.run(learning_rate.assign(starter_learning_rate * ratio))
         saver.save(sess, 'checkpoints/model.ckpt', epoch_n)
         # print "Epoch ", epoch_n, ", Accuracy: ", sess.run(accuracy, feed_dict={inputs: mnist.test.images, outputs:mnist.test.labels, training: False}), "%"
