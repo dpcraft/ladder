@@ -11,8 +11,8 @@ layer_sizes = [784, 1000, 500, 250, 250, 250, 10]
 L = len(layer_sizes) - 1 
 num_examples = 60000
 # 代数
-num_epochs = 40
-num_labeled = 60000
+num_epochs = 50
+num_labeled = 500
 
 starter_learning_rate = 0.02
 
@@ -233,7 +233,8 @@ mnist = input_data.read_data_sets("MNIST_data", n_labeled=num_labeled, one_hot=T
 saver = tf.train.Saver()
 
 print("===  Starting Session ===")
-sess = tf.Session()
+config = tf.ConfigProto(device_count={"CPU":12})
+sess = tf.Session(config=config)
 # 开始训练的数据位置
 i_iter = 0
 # 获取最新的一个checkpoint，（如果存在的话）
@@ -269,7 +270,7 @@ for i in tqdm(range(i_iter, num_iter)):
             sess.run(learning_rate.assign(starter_learning_rate * ratio))
         saver.save(sess, 'checkpoints/model.ckpt', epoch_n)
         # print "Epoch ", epoch_n, ", Accuracy: ", sess.run(accuracy, feed_dict={inputs: mnist.test.images, outputs:mnist.test.labels, training: False}), "%"
-        with open('train_log.csv', 'a') as train_log:
+        with open('train_' + str(num_labeled) + '.csv', 'a') as train_log:
             # 将测试准确率写入 "train_log"文件
             train_log_w = csv.writer(train_log)
             log_i = [epoch_n] + sess.run([accuracy], feed_dict={inputs: mnist.test.images, outputs: mnist.test.labels, training: False})
